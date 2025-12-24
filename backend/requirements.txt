@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+spotipy
+ytmusicapi
+chromadb
+sentence-transformers
+lyricsgenius
+google-genai
+python-dotenv
+pydantic
+requests
