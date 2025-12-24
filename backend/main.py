@@ -3,15 +3,19 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import spotipy
+from dotenv import load_dotenv
 from spotipy.oauth2 import SpotifyOAuth
 from ytmusicapi import YTMusic
 from services.quiz_engine import quick_ingest, generate_batch_quiz
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"], # Vite default port is 5173
+    allow_origins=["http://127.0.0.1:5173", "http://127.0.0.1:3000"], # Vite default port is 5173
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,7 +24,7 @@ app.add_middleware(
 # --- AUTH SETUP ---
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-REDIRECT_URI = "http://localhost:8000/callback"
+REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 
 sp_oauth = SpotifyOAuth(
     client_id=SPOTIFY_CLIENT_ID,
@@ -62,7 +66,7 @@ def run_transfer_task(name, tracks):
 async def prepare_quiz_for_playlist(playlist_id):
     """Common logic: Scrape top songs from playlist -> Generate Quiz"""
     sp = get_spotify_client()
-    tracks = sp.playlist_items(playlist_id, limit=10)
+    tracks = sp.playlist_items(playlist_id, limit=15)
     
     clean_tracks = []
     for item in tracks['items']:
@@ -96,7 +100,7 @@ def callback(code: str):
 @app.get("/playlists")
 def get_playlists():
     sp = get_spotify_client()
-    results = sp.current_user_playlists(limit=10)
+    results = sp.current_user_playlists(limit=30)
     return [{"name": item['name'], "id": item['id'], "image": item['images'][0]['url'] if item['images'] else ""} for item in results['items']]
 
 @app.post("/start_transfer")
