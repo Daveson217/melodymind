@@ -19,8 +19,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genius = lyricsgenius.Genius(
     GENIUS_TOKEN, verbose=False, remove_section_headers=True)
 chroma_client = chromadb.PersistentClient(path="./chroma_db", settings=chromadb.Settings(allow_reset=True))
-collection = chroma_client.get_or_create_collection(
-    name="lyrics_knowledge_base")
+# collection = chroma_client.get_or_create_collection(
+#     name="lyrics_knowledge_base")
+collection = None
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -38,6 +39,10 @@ class QuizQuestion(BaseModel):
 
 def quick_ingest(artist, song_title):
     """Fetches lyrics and stores them immediately for the quiz."""
+    global collection
+    if not collection:
+        collection = chroma_client.get_or_create_collection(name="lyrics_knowledge_base")
+        
     try:
         # Check if already exists to save API calls
         existing = collection.get(where={"song": song_title})
@@ -73,9 +78,13 @@ def quick_ingest(artist, song_title):
         return False
 
 
-def generate_batch_quiz(num_questions=10):
+def generate_batch_quiz(num_questions=10, clean_tracks=[]):
     """Generates a mix of Normal (80%) and Hard (20%) questions."""
     questions = []
+    
+    global collection
+    if not collection:
+        collection = chroma_client.get_or_create_collection(name="lyrics_knowledge_base")
 
     # Try to fetch contexts
     all_docs = collection.get(
@@ -103,10 +112,16 @@ def generate_batch_quiz(num_questions=10):
                 query_embeddings=[correct_vec], n_results=5,
                 where={"song": {"$ne": meta['song']}}
             )
+            print('distractors', results['metadatas'][0])
             distractors = [m['song'] + " by " + m['artist']
                            for m in results['metadatas'][0]][:3]
-            while len(distractors) < 3:
-                distractors.append("Generic Song by Random Artist")
+        
+            # Fallback: Random from clean_tracks
+            while len(distractors) < 3 and clean_tracks:
+                ct = random.choice(clean_tracks)
+                option = f"{ct['name']} by {ct['artist']}"
+                if option not in distractors and option != f"{meta['song']} by {meta['artist']}":
+                    distractors.append(option)
 
             correct_option = f"{meta['song']} by {meta['artist']}"
 
@@ -159,7 +174,7 @@ def generate_batch_quiz(num_questions=10):
 
         try:
             resp = client.models.generate_content(
-                model="gemini-3-flash-preview", # gemini-2.5-flash
+                model="gemini-2.5-flash", #   gemini-3-flash-preview
                 contents=prompt + "\nOutput strictly in JSON compatible with QuizQuestion schema.",
                 config={"response_mime_type": "application/json",
                         "response_json_schema": QuizQuestion.model_json_schema()}

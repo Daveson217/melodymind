@@ -103,7 +103,7 @@ async def prepare_quiz_for_playlist(playlist_id):
         quick_ingest(t['artist'], t['name'])
         
     print("🧠 Generating Quiz...")
-    quiz_data = generate_batch_quiz(num_questions=5)
+    quiz_data = generate_batch_quiz(num_questions=5, clean_tracks=clean_tracks)
     
     # print("QUIZ DATA:")
     # print(quiz_data)
