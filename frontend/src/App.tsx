@@ -6,6 +6,7 @@ const styles = {
   container: { padding: '20px', fontFamily: 'Arial, sans-serif', maxWidth: '600px', margin: 'auto' },
   card: { border: '1px solid #ddd', borderRadius: '8px', padding: '15px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   button: { padding: '8px 16px', backgroundColor: '#1DB954', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontSize: '14px', marginLeft: '5px' },
+  ytButton: { padding: '8px 16px', backgroundColor: '#FF0000', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontSize: '14px', marginBottom: '20px' },
   secButton: { padding: '8px 16px', backgroundColor: '#535353', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontSize: '14px', marginLeft: '5px' },
   quizBox: { backgroundColor: '#282c34', color: 'white', padding: '20px', borderRadius: '10px', marginTop: '20px' }
 };
@@ -13,14 +14,18 @@ const styles = {
 function App() {
   const [view, setView] = useState('login'); 
   const [playlists, setPlaylists] = useState([]);
-  const [quiz, setQuiz] = useState(null); // Fix: Init as null to differentiate from empty array
+  const [quiz, setQuiz] = useState(null); 
   const [currentQ, setCurrentQ] = useState(0);
   const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState(''); // 'transfer' or 'trivia'
+  const [mode, setMode] = useState(''); 
+  
+  // New State for YouTube Status
+  const [ytConnected, setYtConnected] = useState(false);
 
+  // --- SPOTIFY LOGIN (Main Window) ---
   const handleLogin = async () => {
-    const res = await axios.get('http://127.0.0.1:8000/login');
+    const res = await axios.get('http://127.0.0.1:8000/login'); // Ensure IP matches backend
     window.location.href = res.data.url;
   };
 
@@ -30,12 +35,46 @@ function App() {
     if (code) {
       axios.get(`http://127.0.0.1:8000/callback?code=${code}`)
         .then(() => {
-            // Fix: Pass empty string instead of null for title
             window.history.pushState({}, "", "/"); 
             fetchPlaylists();
-        });
+        })
+        .catch(err => console.error("Spotify Auth Error", err));
     }
   }, []);
+
+  // --- YOUTUBE LOGIN (Popup Window) ---
+  const handleYTLogin = async () => {
+    try {
+      // 1. Get the Google Auth URL from backend
+      const res = await axios.get('http://127.0.0.1:8000/login_google');
+      const url = res.data.url;
+
+      // 2. Open it in a small popup window
+      const width = 500;
+      const height = 600;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+      
+      const popup = window.open(
+        url, 
+        'YouTubeLogin', 
+        `width=${width},height=${height},top=${top},left=${left}`
+      );
+
+      // 3. (Optional) Simple Polling to check if user closed it (Assumption of success for MVP)
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          setYtConnected(true); // Assume success if they closed the window manually or via backend script
+          alert("YouTube Music Connected! (Assuming you finished the flow)");
+        }
+      }, 1000);
+
+    } catch (e) {
+      console.error("YouTube Login Error", e);
+      alert("Failed to initialize YouTube Login");
+    }
+  };
 
   const fetchPlaylists = async () => {
     try {
@@ -48,10 +87,14 @@ function App() {
   };
 
   const handleAction = async (id, name, actionType) => {
+    if (actionType === 'transfer' && !ytConnected) {
+        alert("Please connect YouTube Music first!");
+        return;
+    }
+
     setLoading(true);
     setMode(actionType);
     
-    // Choose endpoint based on button clicked
     const endpoint = actionType === 'transfer' 
         ? 'http://127.0.0.1:8000/start_transfer' 
         : 'http://127.0.0.1:8000/start_trivia';
@@ -73,7 +116,6 @@ function App() {
 
   const handleAnswer = (option) => {
     if (!quiz) return;
-
     if (option === quiz[currentQ].correct_answer) {
       setScore(score + 1);
     }
@@ -97,7 +139,18 @@ function App() {
 
       {view === 'dashboard' && (
         <div>
-          <h3>Your Playlists ({playlists.length})</h3>
+          <div style={{marginBottom: '20px', textAlign: 'center'}}>
+             {/* YOUTUBE LOGIN BUTTON */}
+             {!ytConnected ? (
+                 <button style={styles.ytButton} onClick={handleYTLogin}>
+                   Connect YouTube Music
+                 </button>
+             ) : (
+                 <span style={{color: 'green', fontWeight: 'bold'}}>✅ YouTube Connected</span>
+             )}
+          </div>
+
+          <h3>Your Playlists</h3>
           {loading ? <p>⚡ Analyzing Vibe & Generating Quiz...</p> : 
             playlists.map(pl => (
               <div key={pl.id} style={styles.card}>

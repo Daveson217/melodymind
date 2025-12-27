@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import spotipy
@@ -7,6 +8,9 @@ from dotenv import load_dotenv
 from spotipy.oauth2 import SpotifyOAuth
 from ytmusicapi import YTMusic
 from services.quiz_engine import quick_ingest, generate_batch_quiz
+import json
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
 
 # Load environment variables from .env file
 load_dotenv()
@@ -20,6 +24,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- CONFIGURATION ---
+# The scopes define what permissions we ask the user for
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.force-ssl"
+]
+GOOGLE_CLIENT_SECRETS_FILE = "client_secret.json" # Downloaded from Google Cloud
+
+# In-memory storage for demo (to Use a Database in production!)
+user_google_tokens = {}
 
 # --- AUTH SETUP ---
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
@@ -48,25 +63,31 @@ def get_spotify_client():
 def run_transfer_task(name, tracks):
     """Background task to move songs to YT Music"""
     print(f"🚀 Starting Transfer: {name}")
+    # 1. Retrieve the user's token (Logic A: From Memory)
+    if 'current_user' not in user_google_tokens:
+        print("❌ User not logged into YouTube Music")
+        return
+
+    creds = user_google_tokens['current_user']
+    
     try:
-        if os.path.exists("oauth.json"):
-            yt = YTMusic("oauth.json")
-            pl_id = yt.create_playlist(title=name, description="Transferred by MelodyMind")
-            for t in tracks:
-                query = f"{t['name']} by {t['artist']}"
-                search = yt.search(query, filter="songs")
-                if search:
-                    yt.add_playlist_items(pl_id, [search[0]['videoId']])
-                    print(f"✅ Added {t['name']}")
-        else:
-            print("❌ No oauth.json found. Skipping actual YTM transfer.")
+        yt = YTMusic("oauth.json")
+        pl_id = yt.create_playlist(title=name, description="Transferred by MelodyMind")
+        print(f"✅ Playlist Created: {pl_id}")
+        for t in tracks:
+            query = f"{t['name']} by {t['artist']}"
+            search = yt.search(query, filter="songs")
+            if search:
+                yt.add_playlist_items(pl_id, [search[0]['videoId']])
+                print(f"✅ Added {t['name']}")
+        
     except Exception as e:
         print(f"Transfer Failed: {e}")
 
 async def prepare_quiz_for_playlist(playlist_id):
     """Common logic: Scrape top songs from playlist -> Generate Quiz"""
     sp = get_spotify_client()
-    tracks = sp.playlist_items(playlist_id, limit=15)
+    tracks = sp.playlist_items(playlist_id, limit=5)
     
     clean_tracks = []
     for item in tracks['items']:
@@ -75,14 +96,18 @@ async def prepare_quiz_for_playlist(playlist_id):
                 "name": item['track']['name'],
                 "artist": item['track']['artists'][0]['name']
             })
-            
-    # Ingest Top 3 songs to ensure quiz has relevant content
-    print(f"⚡ Ingesting {len(clean_tracks[:3])} songs for context...")
-    for t in clean_tracks[:3]: 
+        
+    # Ingest Top 5 songs to ensure quiz has relevant content
+    print(f"⚡ Ingesting {len(clean_tracks[:5])} songs for context...")
+    for t in clean_tracks[:5]: 
         quick_ingest(t['artist'], t['name'])
         
     print("🧠 Generating Quiz...")
     quiz_data = generate_batch_quiz(num_questions=5)
+    
+    # print("QUIZ DATA:")
+    # print(quiz_data)
+    
     return quiz_data, clean_tracks
 
 # --- ENDPOINTS ---
@@ -96,6 +121,58 @@ def callback(code: str):
     global user_token_info
     user_token_info = sp_oauth.get_access_token(code)
     return {"message": "Login successful. Close this window."}
+
+@app.get("/login_google")
+def login_google():
+    """Step 1: User clicks 'Connect YouTube Music'"""
+    flow = Flow.from_client_secrets_file(
+        GOOGLE_CLIENT_SECRETS_FILE,
+        scopes=GOOGLE_SCOPES,
+        redirect_uri="http://127.0.0.1:8000/google_callback"
+    )
+    
+    # Generate the Google Login URL
+    auth_url, _ = flow.authorization_url(prompt='consent')
+    return {"url": auth_url}
+
+@app.get("/google_callback")
+def google_callback(code: str):
+    """Step 2: Google redirects back here with a code"""
+    global user_google_tokens
+    
+    flow = Flow.from_client_secrets_file(
+        GOOGLE_CLIENT_SECRETS_FILE,
+        scopes=GOOGLE_SCOPES,
+        redirect_uri="http://127.0.0.1:8000/google_callback"
+    )
+    
+    # Exchange code for tokens (Access + Refresh)
+    flow.fetch_token(code=code)
+    credentials = flow.credentials
+    
+    # Store these credentials (associated with a session ID in real app)
+    # We serialize it to JSON to store simply
+    user_google_tokens['current_user'] = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
+    
+    # Redirect frontend to dashboard
+    # Return a script that closes the popup immediately
+    return HTMLResponse("""
+    <html>
+        <body>
+            <h1>Login Successful!</h1>
+            <script>
+                window.close();
+            </script>
+        </body>
+    </html>
+    """)
 
 @app.get("/playlists")
 def get_playlists():
