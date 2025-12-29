@@ -72,7 +72,7 @@ def run_transfer_task(name, tracks):
     creds = user_google_tokens['current_user']
     
     try:
-        yt = YTMusic("oauth.json")
+        yt = YTMusic("client_secret.json")
         pl_id = yt.create_playlist(title=name, description="Transferred by MelodyMind")
         print(f"✅ Playlist Created: {pl_id}")
         for t in tracks:

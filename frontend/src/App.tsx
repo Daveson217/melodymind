@@ -150,8 +150,8 @@ function App() {
              )}
           </div>
 
-          <h3>Your Playlists ({playlists.length} in all)</h3>
-          {loading ? <p>⚡ Analyzing Vibe & Generating Quiz... <br /> <img src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExMmJlc2p5dzZubjVsbzc5eGd6bmVleWlieHFseWswYms0OXZuN3h0aiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/WiIuC6fAOoXD2/giphy.gif" alt="Loading" />  </p> : 
+          <h3>Your Playlists ({playlists.length} in all)</h3> {/* https://tenor.com/bvZX5.gif */}
+          {loading ? <p>⚡ Analyzing Vibe & Generating Quiz... <br /> <img src="https://storage.cloud.google.com/gen-lang-client-0819296089_images/cargando-loading.gif" alt="Loading" /></p> : 
             playlists.map(pl => (
               <div key={pl.id} style={styles.card}>
                 <span><strong>{pl.name}</strong></span>
