@@ -151,7 +151,7 @@ function App() {
           </div>
 
           <h3>Your Playlists ({playlists.length} in all)</h3>
-          {loading ? <p>⚡ Analyzing Vibe & Generating Quiz...</p> : 
+          {loading ? <p>⚡ Analyzing Vibe & Generating Quiz... <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNXYyM3Q1NXVvdXFzanAwampvdTc2eXkyaXd6cWgxc2l4YWo2bXdtdCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/cnzP4cmBsiOrccg20V/giphy.gif" alt="Loading" />  </p> : 
             playlists.map(pl => (
               <div key={pl.id} style={styles.card}>
                 <span><strong>{pl.name}</strong></span>

@@ -88,12 +88,12 @@ def run_transfer_task(name, tracks):
 async def prepare_quiz_for_playlist(playlist_id):
     """Common logic: Scrape top songs from playlist -> Generate Quiz"""
     sp = get_spotify_client()
-    tracks = sp.playlist_items(playlist_id, limit=10)
+    response = sp.playlist_items(playlist_id, limit=10)
     # select random 5 songs from the playlist
-    tracks = random.sample(tracks['items'], min(5, len(tracks['items'])))
+    selected_tracks = random.sample(response['items'], min(5, len(response['items'])))
     
     clean_tracks = []
-    for item in tracks['items']:
+    for item in selected_tracks:
         if item['track']:
             clean_tracks.append({
                 "name": item['track']['name'],
@@ -107,9 +107,6 @@ async def prepare_quiz_for_playlist(playlist_id):
         
     print("🧠 Generating Quiz...")
     quiz_data = generate_batch_quiz(num_questions=5, clean_tracks=clean_tracks)
-    
-    # print("QUIZ DATA:")
-    # print(quiz_data)
     
     return quiz_data, clean_tracks
 
