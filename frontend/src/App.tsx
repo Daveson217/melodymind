@@ -150,7 +150,7 @@ function App() {
              )}
           </div>
 
-          <h3>Your Playlists</h3>
+          <h3>Your Playlists ({playlists.length} in all)</h3>
           {loading ? <p>⚡ Analyzing Vibe & Generating Quiz...</p> : 
             playlists.map(pl => (
               <div key={pl.id} style={styles.card}>

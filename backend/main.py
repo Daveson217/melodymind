@@ -1,4 +1,5 @@
 import os
+import random
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -87,7 +88,9 @@ def run_transfer_task(name, tracks):
 async def prepare_quiz_for_playlist(playlist_id):
     """Common logic: Scrape top songs from playlist -> Generate Quiz"""
     sp = get_spotify_client()
-    tracks = sp.playlist_items(playlist_id, limit=5)
+    tracks = sp.playlist_items(playlist_id, limit=10)
+    # select random 5 songs from the playlist
+    tracks = random.sample(tracks['items'], min(5, len(tracks['items'])))
     
     clean_tracks = []
     for item in tracks['items']:
