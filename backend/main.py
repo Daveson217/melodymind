@@ -1,3 +1,4 @@
+import difflib
 import os
 import random
 from fastapi import FastAPI, BackgroundTasks, HTTPException
@@ -61,6 +62,39 @@ def get_spotify_client():
         raise HTTPException(status_code=401, detail="Not logged in")
     return spotipy.Spotify(auth=user_token_info['access_token'])
 
+def find_best_match(results, target_title, target_artist):
+    """
+    Scans top results for a matching artist. 
+    Returns the specific match if found, otherwise returns the top result.
+    """
+    if not results:
+        return None
+
+    # Normalize target strings
+    t_title = target_title.lower()
+    t_artist = target_artist.lower()
+
+    # 1. PRIORITY: Look for the correct artist in the top 5 results
+    for item in results[:5]:
+        # Extract result details (YT Music returns a list of artists)
+        res_title = item['title'].lower()
+        res_artists = [a['name'].lower() for a in item['artists']]
+        
+        # Check if the target artist appears in the result's artist list
+        # We use strict containment because "The Beatles" should match "The Beatles"
+        artist_match = any(t_artist in a or a in t_artist for a in res_artists)
+
+        # Check title similarity (handles "Remastered", "Radio Edit", etc.)
+        # SequenceMatcher ratio > 0.6 is a loose match, > 0.8 is strong.
+        title_similarity = difflib.SequenceMatcher(None, t_title, res_title).ratio()
+
+        if artist_match and title_similarity > 0.7:
+            return item['videoId']
+
+    # 2. FALLBACK: If no specific artist match found, trust YouTube's top rank
+    print(f"   ⚠️ No strict match found for '{target_artist}'. Using top result: {results[0]['title']}")
+    return results[0]['videoId']
+
 def run_transfer_task(name, tracks):
     """Background task to move songs to YT Music"""
     print(f"🚀 Starting Transfer: {name}")
@@ -69,8 +103,8 @@ def run_transfer_task(name, tracks):
         print("❌ User not logged into YouTube Music")
         return
 
+    # 1. Setup Credentials
     raw_creds = user_google_tokens['current_user']
-    
     oauth_creds = {
         'access_token': raw_creds['token'],  # Mapping 'token' -> 'access_token'
         'refresh_token': raw_creds['refresh_token'],
@@ -81,14 +115,35 @@ def run_transfer_task(name, tracks):
     
     try:
         yt = YTMusic(GOOGLE_CLIENT_SECRETS_FILE, oauth_credentials=oauth_creds)
+        # 2. Create the Playlist first
         pl_id = yt.create_playlist(title=name, description="Transferred by MelodyMind")
         print(f"✅ Playlist Created: {pl_id}")
+        
+        # 3. Collect Video IDs (Don't add them yet!)
+        video_ids_to_add = []
+        
         for t in tracks:
             query = f"{t['name']} by {t['artist']}"
             search = yt.search(query, filter="songs")
             if search:
-                yt.add_playlist_items(pl_id, [search[0]['videoId']])
-                print(f"✅ Added {t['name']}")
+                best_video_id = find_best_match(search, t['name'], t['artist'])
+                if best_video_id:
+                    video_ids_to_add.append(best_video_id)
+                    print(f"   found: {t['name']}")
+                    # yt.add_playlist_items(pl_id, [best_video_id])
+                    # print(f"✅ Added {t['name']}")
+                else:
+                    print(f"❌ Could not find valid match for {t['name']}")  
+                         
+        # 4. Batch Add (Chunks of 50 to avoid timeouts)
+        if video_ids_to_add:
+            print(f"📥 Batch adding {len(video_ids_to_add)} songs...")
+            
+            chunk_size = 50
+            for i in range(0, len(video_ids_to_add), chunk_size):
+                chunk = video_ids_to_add[i:i + chunk_size]
+                yt.add_playlist_items(pl_id, chunk)
+                print(f"   ✅ Added batch {i // chunk_size + 1}")         
         
     except Exception as e:
         print(f"Transfer Failed: {e}")
