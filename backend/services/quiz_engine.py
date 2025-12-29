@@ -85,10 +85,18 @@ def generate_batch_quiz(num_questions=10, clean_tracks=[]):
     global collection
     if not collection:
         collection = chroma_client.get_or_create_collection(name="lyrics_knowledge_base")
-
+    
     # Try to fetch contexts
-    all_docs = collection.get(
-        limit=30, include=["documents", "metadatas", "embeddings"])
+    try:
+        all_docs = collection.get(
+            limit=30, include=["documents", "metadatas", "embeddings"])
+    except Exception as e:
+        # Safety net: if collection is stale, recreate it and try again
+        print(f"Collection error: {e}. Recreating...")
+        collection = chroma_client.get_or_create_collection(name="lyrics_knowledge_base")
+        all_docs = collection.get(limit=30, include=["documents", "metadatas", "embeddings"])
+    
+    
     if not all_docs['documents']:
         return []
 
@@ -187,5 +195,6 @@ def generate_batch_quiz(num_questions=10, clean_tracks=[]):
 
     # This will delete all collections, embeddings, documents, and metadata
     chroma_client.reset()
+    collection = None
     
     return questions
