@@ -19,6 +19,7 @@ function App() {
   const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState(''); 
+  const [transferStatus, setTransferStatus] = useState("idle");
   
   // New State for YouTube Status
   const [ytConnected, setYtConnected] = useState(false);
@@ -41,6 +42,36 @@ function App() {
         .catch(err => console.error("Spotify Auth Error", err));
     }
   }, []);
+
+  useEffect(() => {
+    let interval;
+    if (mode === 'transfer' && (view === 'quiz' || view === 'result')) {
+      interval = setInterval(async () => {
+        try {
+          const res = await axios.get('http://127.0.0.1:8000/transfer_status');
+          const data = res.data;
+
+          if (data.status === "error") {
+            if (data.error === "AUTH_REQUIRED" || data.error === "AUTH_EXPIRED") {
+              alert("YouTube Music session expired. Please re-authenticate.");
+              setYtConnected(false);
+              handleYTLogin(); // Trigger the popup automatically
+              clearInterval(interval);
+            } else {
+              console.error("Transfer error:", data.error);
+              clearInterval(interval);
+            }
+          } else if (data.status === "completed") {
+            setTransferStatus("completed");
+            clearInterval(interval);
+          }
+        } catch (e) {
+          console.error("Polling error", e);
+        }
+      }, 3000); // Poll every 3 seconds
+    }
+    return () => clearInterval(interval);
+  }, [mode, view]);
 
   // --- YOUTUBE LOGIN (Popup Window) ---
   const handleYTLogin = async () => {
