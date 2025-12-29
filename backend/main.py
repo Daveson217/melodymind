@@ -52,6 +52,9 @@ sp_oauth = SpotifyOAuth(
 
 user_token_info = None
 
+# Global store for transfer statuses: { "user_id": {"status": "processing", "error": None} }
+transfer_statuses = {}
+
 class PlaylistRequest(BaseModel):
     playlist_id: str
     playlist_name: str
@@ -92,11 +95,25 @@ def find_best_match(results, target_title, target_artist):
             return item['videoId']
 
     # 2. FALLBACK: If no specific artist match found, trust YouTube's top rank
-    print(f"   ⚠️ No strict match found for '{target_artist}'. Using top result: {results[0]['title']}")
+    print(f" ⚠️ No strict match found for '{target_artist}'. Using top result: {results[0]['title']}")
     return results[0]['videoId']
+
 
 def run_transfer_task(name, tracks):
     """Background task to move songs to YT Music"""
+    # Set initial status
+    global transfer_statuses
+    total_tracks = len(tracks)
+    
+    # Initialize status
+    transfer_statuses["current_user"] = {
+        "status": "processing",
+        "current_song": "Initializing...",
+        "progress": 0,
+        "total": total_tracks,
+        "error": None
+    }
+    
     print(f"🚀 Starting Transfer: {name}")
     # 1. Retrieve the user's token (Logic A: From Memory)
     if 'current_user' not in user_google_tokens:
@@ -115,6 +132,18 @@ def run_transfer_task(name, tracks):
     
     try:
         yt = YTMusic(GOOGLE_CLIENT_SECRETS_FILE, oauth_credentials=oauth_creds)
+        
+        # PROBE: Verify the connection actually works by asking for the user's library
+        # This forces an error immediately if the credentials are bad
+        yt.get_liked_songs(limit=1)
+        
+    except Exception as e:
+        # This block catches 401 Unauthorized or 400 Bad Request
+        print(f"⛔ AUTHENTICATION FAILED")
+        transfer_statuses["current_user"] = {"status": "error", "error": "AUTH_EXPIRED"}
+        return
+    
+    try:
         # 2. Create the Playlist first
         pl_id = yt.create_playlist(title=name, description="Transferred by MelodyMind")
         print(f"✅ Playlist Created: {pl_id}")
@@ -122,7 +151,13 @@ def run_transfer_task(name, tracks):
         # 3. Collect Video IDs (Don't add them yet!)
         video_ids_to_add = []
         
-        for t in tracks:
+        for i, t in enumerate(tracks):
+            # Update status for the frontend to see
+            transfer_statuses["current_user"].update({
+                "current_song": f"{t['name']} by {t['artist']}",
+                "progress": i + 1
+            })
+            
             query = f"{t['name']} by {t['artist']}"
             search = yt.search(query, filter="songs")
             if search:
@@ -137,16 +172,29 @@ def run_transfer_task(name, tracks):
                          
         # 4. Batch Add (Chunks of 50 to avoid timeouts)
         if video_ids_to_add:
+            transfer_statuses["current_user"]["current_song"] = "Finalizing playlist..."
             print(f"📥 Batch adding {len(video_ids_to_add)} songs...")
             
             chunk_size = 50
             for i in range(0, len(video_ids_to_add), chunk_size):
                 chunk = video_ids_to_add[i:i + chunk_size]
                 yt.add_playlist_items(pl_id, chunk)
-                print(f"   ✅ Added batch {i // chunk_size + 1}")         
+                print(f"   ✅ Added batch {i // chunk_size + 1}")   
+        
+        # 4. Mark Complete
+        transfer_statuses["current_user"].update({
+            "status": "completed",
+            "current_song": "All songs added!",
+            "progress": total_tracks
+        })
+        print(f"🎉 Transfer Completed Successfully!")
         
     except Exception as e:
         print(f"Transfer Failed: {e}")
+        transfer_statuses["current_user"] = {
+            "status": "error", 
+            "error": str(e)
+        }
 
 async def prepare_quiz_for_playlist(playlist_id):
     """Common logic: Scrape top songs from playlist -> Generate Quiz"""
@@ -256,6 +304,11 @@ async def start_trivia(req: PlaylistRequest):
     quiz_data, _ = await prepare_quiz_for_playlist(req.playlist_id)
     return {"quiz": quiz_data, "mode": "trivia"}
 
+@app.get("/transfer_status")
+def get_transfer_status():
+    # In a real app, use a unique session ID. For now, we use a global key.
+    return transfer_statuses.get("current_user", {"status": "idle"})
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)     
