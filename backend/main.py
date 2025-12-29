@@ -69,10 +69,18 @@ def run_transfer_task(name, tracks):
         print("❌ User not logged into YouTube Music")
         return
 
-    creds = user_google_tokens['current_user']
+    raw_creds = user_google_tokens['current_user']
+    
+    oauth_creds = {
+        'access_token': raw_creds['token'],  # Mapping 'token' -> 'access_token'
+        'refresh_token': raw_creds['refresh_token'],
+        'scope': raw_creds['scopes'],
+        'token_type': 'Bearer',
+        'expires_in': 3600 # Approximate, helps library know when to refresh
+    }
     
     try:
-        yt = YTMusic("client_secret.json")
+        yt = YTMusic(GOOGLE_CLIENT_SECRETS_FILE, oauth_credentials=oauth_creds)
         pl_id = yt.create_playlist(title=name, description="Transferred by MelodyMind")
         print(f"✅ Playlist Created: {pl_id}")
         for t in tracks:

@@ -120,7 +120,7 @@ def generate_batch_quiz(num_questions=10, clean_tracks=[]):
                 query_embeddings=[correct_vec], n_results=5,
                 where={"song": {"$ne": meta['song']}}
             )
-            print('distractors', results['metadatas'][0])
+            
             distractors = [m['song'] + " by " + m['artist']
                            for m in results['metadatas'][0]][:3]
         
