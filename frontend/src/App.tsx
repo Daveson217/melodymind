@@ -19,7 +19,11 @@ function App() {
   const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState(''); 
-  const [transferStatus, setTransferStatus] = useState("idle");
+  const [transferInfo, setTransferInfo] = useState({ 
+  current_song: '', 
+  progress: 0, 
+  total: 0 
+});
   
   // New State for YouTube Status
   const [ytConnected, setYtConnected] = useState(false);
@@ -43,35 +47,36 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    let interval;
-    if (mode === 'transfer' && (view === 'quiz' || view === 'result')) {
-      interval = setInterval(async () => {
-        try {
-          const res = await axios.get('http://127.0.0.1:8000/transfer_status');
-          const data = res.data;
+// Update the Polling Effect
+useEffect(() => {
+  let interval;
+  if (mode === 'transfer' && (view === 'quiz' || view === 'result')) {
+    interval = setInterval(async () => {
+      try {
+        const res = await axios.get('http://127.0.0.1:8000/transfer_status');
+        const data = res.data;
 
-          if (data.status === "error") {
-            if (data.error === "AUTH_REQUIRED" || data.error === "AUTH_EXPIRED") {
-              alert("YouTube Music session expired. Please re-authenticate.");
-              setYtConnected(false);
-              handleYTLogin(); // Trigger the popup automatically
-              clearInterval(interval);
-            } else {
-              console.error("Transfer error:", data.error);
-              clearInterval(interval);
-            }
-          } else if (data.status === "completed") {
-            setTransferStatus("completed");
-            clearInterval(interval);
-          }
-        } catch (e) {
-          console.error("Polling error", e);
+        if (data.status === "processing") {
+          setTransferInfo({
+            current_song: data.current_song,
+            progress: data.progress,
+            total: data.total
+          });
+        } else if (data.status === "completed") {
+          setTransferStatus("completed");
+          clearInterval(interval);
+        } else if (data.status === "error") {
+          // ... handle errors as we did before ...
+          clearInterval(interval);
         }
-      }, 3000); // Poll every 3 seconds
-    }
-    return () => clearInterval(interval);
-  }, [mode, view]);
+      } catch (e) {
+        console.error("Polling error", e);
+      }
+    }, 2000); // Poll every 2 seconds for a snappier feel
+  }
+  return () => clearInterval(interval);
+}, [mode, view]);
+
 
   // --- YOUTUBE LOGIN (Popup Window) ---
   const handleYTLogin = async () => {
@@ -212,6 +217,26 @@ function App() {
                Transferring in background...
              </p>
           )}
+        </div>
+      )}
+
+      {mode === 'transfer' && (
+        <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#333', borderRadius: '8px' }}>
+          <p style={{ fontSize: '0.8em', margin: '0', color: '#1DB954' }}>
+            🚀 Transferring: <strong>{transferInfo.current_song}</strong>
+          </p>
+          <div style={{ width: '100%', height: '8px', backgroundColor: '#555', borderRadius: '4px', marginTop: '8px' }}>
+            <div style={{ 
+              width: `${(transferInfo.progress / transferInfo.total) * 100}%`, 
+              height: '100%', 
+              backgroundColor: '#1DB954', 
+              borderRadius: '4px',
+              transition: 'width 0.5s ease-in-out' 
+            }} />
+          </div>
+          <p style={{ fontSize: '0.7em', textAlign: 'right', marginTop: '4px', color: '#bbb' }}>
+            {transferInfo.progress} / {transferInfo.total} songs
+          </p>
         </div>
       )}
 
